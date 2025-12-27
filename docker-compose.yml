@@ -1,0 +1,74 @@
+version: "3.9"
+
+services:
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.le.acme.httpchallenge=true"
+      - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.le.acme.email=your-stepanov.i5@yandex.ru"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+
+  db:
+    image: mariadb:10.6
+    container_name: nextcloud_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: nextcloud
+      MYSQL_USER: nextcloud
+      MYSQL_PASSWORD: nextcloudpass
+    volumes:
+      - db:/var/lib/mysql
+
+  redis:
+    image: redis:alpine
+    container_name: nextcloud_redis
+    restart: always
+
+  nextcloud:
+    image: nextcloud:apache
+    container_name: nextcloud_app
+    restart: always
+    environment:
+      MYSQL_HOST: db
+      MYSQL_DATABASE: nextcloud
+      MYSQL_USER: nextcloud
+      MYSQL_PASSWORD: nextcloudpass
+      REDIS_HOST: redis
+    volumes:
+      - data:/var/www/html
+    labels:
+      - "traefik.enable=true"
+
+      # HTTPS
+      - "traefik.http.routers.nextcloud.rule=Host(`blackgring0rspbrry.ru`)"
+      - "traefik.http.routers.nextcloud.entrypoints=websecure"
+      - "traefik.http.routers.nextcloud.tls=true"
+      - "traefik.http.routers.nextcloud.tls.certresolver=le"
+
+  # HTTP → HTTPS redirect
+      - "traefik.http.routers.nextcloud_http.rule=Host(`blackgring0rspbrry.ru`)"
+      - "traefik.http.routers.nextcloud_http.entrypoints=web"
+      - "traefik.http.middlewares.redirect_https.redirectscheme.scheme=https"
+      - "traefik.http.routers.nextcloud_http.middlewares=redirect_https"
+
+  # service
+      - "traefik.http.services.nextcloud.loadbalancer.server.port=80"
+
+volumes:
+  data:
+  db:
+  letsencrypt:
